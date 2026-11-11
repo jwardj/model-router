@@ -1,18 +1,64 @@
 # model-router
 
-Picks a model for every prompt you send.
+A Claude Code plugin that picks which Claude model answers each prompt, so quick chores run on the cheap, fast model and real work gets the stronger one, without switching models by hand.
 
-- Asking for Fable by name ("use fable", "fable: ...", "with claude fable", "switch to Fable 5.2") goes to Fable; "write a fable" does not
-- Fable is only used when asked for by name or locked with `/route fable`, even if Fable is selected in the app; the default is Opus
-- Web browsing and lookups go to Opus
-- Quick chores (reminders, dashboard or calendar adds, renames, quick questions) go to Sonnet
-- Real work (worksheets, homework, coding, writing, research, documents) goes to Opus
-- Follow-ups ("continue", "yes", "do it", short replies) stay on the model of the task they continue
-- Chore keywords only count in short prompts (20 words or fewer); weak ones ("ok", "delete", "when is", "thanks") lose to real-work words
-- Anything unclear gets a fast yes/no check; if that fails, Opus
-- A Sonnet pick still working after 4 model requests switches to Opus for the rest of the task
-- A pick for a cheaper model is skipped when the current model's cache is warm and the cheaper one would have to re-read more than about 10k tokens of the chat (the prompt cache is per model, so that re-read costs more than it saves). Moves up, Fable by name and `/route` locks always go through. `CACHE_TTL_MS` and `SMALL_REREAD_TOKENS` in `hooks/route.ts` tune it
+| Prompt | Model | Why |
+|---|---|---|
+| "remind me to call mom friday" | Sonnet | quick chore |
+| "make the ipad worksheet for ECE306 hw 5" | Opus | real work |
+| "look up when the career fair is and add a reminder" | Opus | web work always goes up |
+| "yes do it" | same as before | follow-up to the last task |
+| "use fable to explain this circuit" | Fable | asked for by name |
 
-The status line shows the pick and why. `/route opus`, `/route sonnet`, `/route fable` and `/route auto` override it. Plain `/route` shows the current mode, the last pick and which model actually answered.
+Written in TypeScript against the Claude Code plugin hooks API. Built with AI-assisted development (Claude), designed, tested and tuned by me against my own daily use.
 
-Edit the keyword lists in `hooks/route.ts` to change the rules.
+## How it decides
+
+Every prompt goes through three layers, cheapest first:
+
+1. **Keyword rules** (`hooks/route.ts`, `routeByRules`), checked in order:
+   - Fable by name ("use fable", "fable: ...", "switch to Fable 5.2"); "write a fable" does not count
+   - Web browsing or lookups go to Opus
+   - Short follow-ups ("continue", "yes", "do it") stay on the model of the task they continue
+   - Clear chores (reminders, calendar adds) go to Sonnet, but only in prompts of 20 words or fewer
+   - Real-work words (coding, homework, research, writing, documents) go to Opus
+   - Weak chore hints ("ok", "rename", "thanks") go to Sonnet only if nothing above fired
+2. **LLM classifier.** If no rule fires, a fast model answers one question: quick chore or real task?
+3. **Safe default.** If the classifier fails, Opus. A wrong pick upward costs a little money; a wrong pick downward costs a bad answer.
+
+Two corrections run after the pick:
+
+- **Escalation.** A Sonnet "chore" still working after 4 model requests is not a chore; it moves to Opus for the rest of the task.
+- **Cache awareness** (`keepWarm`). The prompt cache is per model. A model that has not read this chat pays for all of it again, while the model that just answered re-reads it at about 10% of the price. So a move to a cheaper model is skipped when it would have to re-read more than about 10k tokens of a chat whose cache is still warm. Moves up are never held back.
+
+## Commands
+
+The status line shows the current pick and why.
+
+- `/route opus`, `/route sonnet`, `/route fable`: lock to one model
+- `/route auto`: back to automatic
+- `/route`: show the mode, the last pick and which model actually answered
+
+## Layout
+
+```
+.claude-plugin/plugin.json   plugin manifest
+hooks/hooks.json             registers hooks/register.ts
+hooks/register.ts            the hooks: prompt.submit (pick), turn.step (switch model, escalate, track cache), /route command
+hooks/route.ts               pure routing logic: keyword rules, keepWarm, classifier prompt
+hooks/route.test.ts          unit tests for the routing logic
+types/index.d.ts             Tier / Mode / Pick types and the plugin's stored state
+```
+
+The routing logic in `route.ts` is pure functions with no I/O, which is what makes it easy to test; `register.ts` is the thin layer that reads and writes state and talks to the app.
+
+## Tuning
+
+- Keyword lists: `hooks/route.ts`
+- `CHORE_MAX_WORDS` (20): longest prompt a chore keyword counts in
+- `ESCALATE_AT_STEP` (4) in `hooks/register.ts`
+- `CACHE_TTL_MS` (1 hour) and `SMALL_REREAD_TOKENS` (10k) for cache awareness
+
+## Tests
+
+`hooks/route.test.ts` covers chores, real work, follow-ups, Fable by name (and "write a fable" not counting), long questions that happen to contain chore words, and the cache rule. Run them with the plugin test runner in Claude Code.
