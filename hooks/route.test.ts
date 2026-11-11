@@ -1,0 +1,72 @@
+import { expect, test } from 'claude-code/testing'
+import { CACHE_TTL_MS, keepWarm, routeByRules, typedText } from './route'
+
+test('a cheaper pick does not throw away a warm cache on a big chat', () => {
+  const now = 10 * CACHE_TTL_MS
+  const big = { tokens: 80_000, at: now - 60_000 }
+  expect(keepWarm('sonnet', { opus: big }, now)).toBe('opus')
+  expect(keepWarm('opus', { fable: big }, now)).toBe('fable')
+  // Moves up are never held back.
+  expect(keepWarm('opus', { sonnet: big }, now)).toBe('opus')
+  expect(keepWarm('fable', { opus: big }, now)).toBe('fable')
+  // Nothing to lose: new chat, small chat, or the cache has lapsed.
+  expect(keepWarm('sonnet', {}, now)).toBe('sonnet')
+  expect(keepWarm('sonnet', { opus: { tokens: 4_000, at: now - 60_000 } }, now)).toBe('sonnet')
+  expect(keepWarm('sonnet', { opus: { tokens: 80_000, at: now - CACHE_TTL_MS - 1 } }, now)).toBe('sonnet')
+  // Sonnet read most of this chat a few minutes ago, so going back to it re-reads little.
+  expect(keepWarm('sonnet', { opus: big, sonnet: { tokens: 75_000, at: now - 300_000 } }, now)).toBe('sonnet')
+  expect(keepWarm('sonnet', { opus: big, sonnet: { tokens: 20_000, at: now - 300_000 } }, now)).toBe('opus')
+})
+
+test('chores go to sonnet', () => {
+  expect(routeByRules('add a reminder to the dashboard for my lab report')?.tier).toBe('sonnet')
+  expect(routeByRules('remind me to call mom friday')?.tier).toBe('sonnet')
+  expect(routeByRules('thanks!')?.tier).toBe('sonnet')
+})
+
+test('real work goes to opus', () => {
+  expect(routeByRules('make the ipad worksheet for ECE306 hw 5')?.tier).toBe('opus')
+  expect(routeByRules('browse the web for co-op openings at GE Aerospace')?.tier).toBe('opus')
+  expect(routeByRules('can you look up when the career fair is and add a reminder')?.tier).toBe('opus')
+})
+
+test('unclear prompts fall through to the classifier', () => {
+  expect(routeByRules('I need to sort out my plans for the weekend with friends')).toBe(null)
+})
+
+test('follow-ups keep the model of the task they continue', () => {
+  expect(routeByRules('continue', 'opus')?.tier).toBe('opus')
+  expect(routeByRules('ok keep going', 'opus')?.tier).toBe('opus')
+  expect(routeByRules('yes do it', 'sonnet')?.tier).toBe('sonnet')
+  expect(routeByRules('continue')?.tier).toBe('opus')
+  expect(routeByRules('fix the second one', 'opus')?.tier).toBe('opus')
+})
+
+test('real-work words beat weak chore words', () => {
+  expect(routeByRules('is this code ok')?.tier).toBe('opus')
+  expect(routeByRules('debug why delete fails in my script')?.tier).toBe('opus')
+  expect(routeByRules('explain when is the exam curve applied')?.tier).toBe('opus')
+  expect(routeByRules('rename the lab folder')?.tier).toBe('sonnet')
+})
+
+test('asking for fable by name goes to fable', () => {
+  expect(routeByRules('use fable to explain this circuit')?.tier).toBe('fable')
+  expect(routeByRules('fable: add a reminder for friday')?.tier).toBe('fable')
+  expect(routeByRules('answer with claude fable please')?.tier).toBe('fable')
+  expect(routeByRules('switch to Fable 5.2')?.tier).toBe('fable')
+  expect(routeByRules('write a fable for my english class')?.tier).toBe('opus')
+  expect(routeByRules('yes do it', 'fable')?.tier).toBe('fable')
+  expect(routeByRules('fix the second one', 'fable')?.tier).toBe('fable')
+})
+
+test('chore words in a long question do not make it a chore', () => {
+  const q = 'for the model router does it know when i say something like continue that it shouldnt use sonnet ' +
+    'for that entire task, ok and will it switch once it realizes or does it only go off the length of the prompt'
+  expect(routeByRules(q)?.tier).not.toBe('sonnet')
+})
+
+test("the app's own reminder blocks are not routed on", () => {
+  const raw = '<system-reminder>\nCLAUDE.md contents, a reminder\n</system-reminder>\nwhy does my fourier series not converge'
+  expect(typedText(raw)).toBe('why does my fourier series not converge')
+  expect(routeByRules(typedText(raw))?.tier).toBe('opus')
+})
