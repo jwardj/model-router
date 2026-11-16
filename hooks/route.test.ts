@@ -65,6 +65,27 @@ test('chore words in a long question do not make it a chore', () => {
   expect(routeByRules(q)?.tier).not.toBe('sonnet')
 })
 
+test('misses found by the 2026-11-16 benchmark', () => {
+  // Fable by name, phrased other ways; the story is still not the model.
+  expect(routeByRules('have Fable do this')?.tier).toBe('fable')
+  expect(routeByRules('ask fable to review my essay')?.tier).toBe('fable')
+  expect(routeByRules('can fable handle this one? make my worksheet')?.tier).toBe('fable')
+  expect(routeByRules('i want fable for this one')?.tier).toBe('fable')
+  expect(routeByRules('the tortoise and the hare is my favorite fable, thanks')?.tier).toBe('sonnet')
+  expect(routeByRules('i want fable ideas for my english class')?.tier).not.toBe('fable')
+  // Adding a part of an app is coding; being reminded how something works is explaining.
+  expect(routeByRules('add a dark mode to the dashboard')?.tier).toBe('opus')
+  expect(routeByRules('add office hours to my calendar thursday 2pm')?.tier).toBe('sonnet')
+  expect(routeByRules('remind me how convolution works')?.tier).toBe('opus')
+  expect(routeByRules("remind me what's due friday")?.tier).toBe('sonnet')
+  // Ticking something off is a chore even with a course code in it.
+  expect(routeByRules('mark the ECE306 quiz as done')?.tier).toBe('sonnet')
+  // An acknowledgement that keeps going continues the task; one on its own is a chore.
+  expect(routeByRules('thanks, now do the same for chapter 8', 'opus')?.tier).toBe('opus')
+  expect(routeByRules('ok now make it handle negative numbers too', 'opus')?.tier).toBe('opus')
+  expect(routeByRules('ok cool', 'opus')?.tier).toBe('sonnet')
+})
+
 test("the app's own reminder blocks are not routed on", () => {
   const raw = '<system-reminder>\nCLAUDE.md contents, a reminder\n</system-reminder>\nwhy does my fourier series not converge'
   expect(typedText(raw)).toBe('why does my fourier series not converge')

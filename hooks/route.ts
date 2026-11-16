@@ -25,9 +25,13 @@ export function keepWarm(chosen: Tier, seen: Seen, now: number): Tier {
   return reread < SMALL_REREAD_TOKENS ? chosen : cur[0]
 }
 
-// Asking for Fable by name wins over everything ("use fable", "fable: ...", "with claude fable").
-// Plain "fable" stays out so "write a fable for English" is still writing.
-const FABLE = /\b(use|using|with|via|switch to|route to|answer with)\s+(claude[\s-]+)?fable\b|^\s*fable\b\s*[:,-]|\bclaude[\s-]+fable\b|\bfable\s+5(\.2)?\b/i
+// Asking for Fable by name wins over everything ("use fable", "have fable do this", "fable: ...", "with claude fable").
+// The model is a bare "fable" right after a verb; the story has an article ("a fable", "my favorite fable"),
+// so "write a fable for English" is still writing. "want/need fable" only counts before to/for/on.
+const FABLE = /\b(use|using|with|via|switch to|route to|answer with|have|ask|let|can|could|should)\s+(claude[\s-]+)?fable\b|\b(want|need)\s+(claude[\s-]+)?fable\s+(to|for|on)\b|^\s*fable\b\s*[:,-]|\bclaude[\s-]+fable\b|\bfable\s+5(\.2)?\b/i
+
+// Parts of an app: adding one of these is coding ("add a dark mode to the dashboard"), not a quick add.
+const UI = 'mode|feature|button|page|tab|chart|graph|widget|panel|toggle|theme|filter'
 
 // Anything that needs real thinking, careful output or the web goes to Opus.
 // Web work always goes to Opus, even inside a chore ("look up X and add a reminder").
@@ -40,22 +44,28 @@ const OPUS: [RegExp, string][] = [
   [/\b(research|compare|analy[sz]e|explain|why does|derive|prove|solve|study guide)\b/i, 'research / reasoning'],
   [/\b(ece ?\d{3}|signals?|circuit|ltspice|fourier|laplace|convolution|probability|statistics)\b/i, 'engineering coursework'],
   [/\b(build|code|debug|fix (the|my) (bug|code|script)|script|mod|plugin|dashboard (feature|redesign)|redesign)\b/i, 'building / coding'],
+  [new RegExp(`\\badd .{0,30}\\b(${UI})\\b`, 'i'), 'building / coding'],
   [/\b(essay|paper|resume|cover letter|application|personal statement|draft|write (a|an|me))\b/i, 'writing'],
   [/\b(slides?|deck|presentation|spreadsheet|report|pdf)\b/i, 'document building'],
 ]
 
 // Clear chore actions: these win over real-work words ("add a reminder for my lab report").
+// "remind me how convolution works" asks for an explanation, and adding a part of an app is coding: neither is a chore.
 const CHORE: [RegExp, string][] = [
-  [/\b(remind(er)?|add .{0,30}(to|on) (the |my )?(dashboard|calendar|tasks?|list))\b/i, 'reminder / quick add'],
+  [new RegExp(`\\b(remind(er)?(?! me (how|what|why|who|which)\\b)|add (?!.{0,30}\\b(${UI})\\b).{0,30}(to|on) (the |my )?(dashboard|calendar|tasks?|list))\\b`, 'i'), 'reminder / quick add'],
   [/\b(calendar event|schedule (a|an)|move (my|the) .{0,20}(to|from)|reschedule)\b/i, 'calendar chore'],
+  [/\b(mark .{0,20}(done|complete)|check off|cross off)\b/i, 'quick edit'],
 ]
 
 // Weak chore hints: only count when no real-work word fired ("is this code ok" is coding).
 const WEAK_CHORE: [RegExp, string][] = [
-  [/\b(rename|delete|mark .{0,20}(done|complete)|check off|cross off)\b/i, 'quick edit'],
-  [/\b(what time|when is|how many days|what's due|whats due|thanks|thank you|ok|okay|cool)\b/i, 'quick question'],
+  [/\b(rename|delete)\b/i, 'quick edit'],
+  [/\b(what time|when is|how many days|what's due|whats due)\b/i, 'quick question'],
   [/\b(typo|spelling|reword this sentence)\b/i, 'tiny fix'],
 ]
+
+// Weakest of all: "thanks!" is a chore, but "ok now make it handle negatives" keeps going, so it continues the task.
+const ACK = /\b(thanks|thank you|ok|okay|cool)\b/i
 
 // "continue", "yes", "do it": a follow-up belongs to whatever task came before it.
 const FOLLOW_UP = /\b(continue|keep going|go on|go ahead|carry on|proceed|resume|do it|do that|try again|finish( it)?|yes|yeah|yep|sure|sounds good)\b/i
@@ -70,7 +80,7 @@ export function typedText(text: string): string {
 
 /**
  * Keyword rules, in order: Fable by name, web, follow-ups (same model as the last pick), clear chores,
- * real work, weak chore hints, then very short prompts. Chore rules only count in short prompts.
+ * real work, weak chore hints, acknowledgements, then very short prompts. Chore rules only count in short prompts.
  * Null when no rule fires.
  */
 export function routeByRules(text: string, prev?: Tier): { tier: Tier; why: string } | null {
@@ -82,6 +92,7 @@ export function routeByRules(text: string, prev?: Tier): { tier: Tier; why: stri
   if (short) for (const [re, why] of CHORE) if (re.test(text)) return { tier: 'sonnet', why }
   for (const [re, why] of OPUS) if (re.test(text)) return { tier: 'opus', why }
   if (short) for (const [re, why] of WEAK_CHORE) if (re.test(text)) return { tier: 'sonnet', why }
+  if (short && ACK.test(text)) return prev && words >= 4 ? { tier: prev, why: 'follow-up, same model as before' } : { tier: 'sonnet', why: 'quick question' }
   // Very short prompts with nothing else to go on: part of the current task if there is one, else usually a chore.
   if (words <= 4) return prev ? { tier: prev, why: 'short follow-up' } : { tier: 'sonnet', why: 'short prompt' }
   return null
