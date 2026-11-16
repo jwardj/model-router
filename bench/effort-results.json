@@ -1,0 +1,122 @@
+[
+ {
+  "id": "circuit",
+  "effort": "medium",
+  "out": 469,
+  "thinking": 150,
+  "cost": 0.0396774,
+  "secs": 10.292,
+  "turns": 1,
+  "ok": true
+ },
+ {
+  "id": "circuit",
+  "effort": "high",
+  "out": 432,
+  "thinking": 121,
+  "cost": 0.0388654,
+  "secs": 9.96,
+  "turns": 1,
+  "ok": true
+ },
+ {
+  "id": "circuit",
+  "effort": "xhigh",
+  "out": 654,
+  "thinking": 155,
+  "cost": 0.0434014,
+  "secs": 11.24,
+  "turns": 1,
+  "ok": true
+ },
+ {
+  "id": "signals",
+  "effort": "medium",
+  "out": 1185,
+  "thinking": 165,
+  "cost": 0.054229400000000004,
+  "secs": 15.902,
+  "turns": 1,
+  "ok": true
+ },
+ {
+  "id": "signals",
+  "effort": "high",
+  "out": 1314,
+  "thinking": 252,
+  "cost": 0.0568014,
+  "secs": 17.281,
+  "turns": 1,
+  "ok": true
+ },
+ {
+  "id": "signals",
+  "effort": "xhigh",
+  "out": 1407,
+  "thinking": 465,
+  "cost": 0.0587494,
+  "secs": 18.251,
+  "turns": 1,
+  "ok": true
+ },
+ {
+  "id": "debug",
+  "effort": "medium",
+  "out": 850,
+  "thinking": 61,
+  "cost": 0.0566436,
+  "secs": 17.539,
+  "turns": 3,
+  "ok": true
+ },
+ {
+  "id": "debug",
+  "effort": "high",
+  "out": 1032,
+  "thinking": 135,
+  "cost": 0.06276899999999999,
+  "secs": 19.572,
+  "turns": 4,
+  "ok": true
+ },
+ {
+  "id": "debug",
+  "effort": "xhigh",
+  "out": 1460,
+  "thinking": 444,
+  "cost": 0.0739088,
+  "secs": 25.929,
+  "turns": 4,
+  "ok": true
+ },
+ {
+  "id": "essay",
+  "effort": "medium",
+  "out": 639,
+  "thinking": 17,
+  "cost": 0.0427974,
+  "secs": 14.519,
+  "turns": 1,
+  "ok": true
+ },
+ {
+  "id": "essay",
+  "effort": "high",
+  "out": 2305,
+  "thinking": 1659,
+  "cost": 0.0760774,
+  "secs": 25.005,
+  "turns": 1,
+  "ok": true
+ },
+ {
+  "id": "essay",
+  "effort": "xhigh",
+  "out": 4345,
+  "thinking": 3756,
+  "cost": 0.1169414,
+  "secs": 41.951,
+  "turns": 1,
+  "ok": true
+ }
+]

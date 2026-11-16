@@ -1,6 +1,6 @@
 {
   "name": "model-router",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Picks Sonnet for quick chores, Opus for real work, and Fable when asked by name, per prompt",
   "author": { "name": "Josh Ward" },
   "types": "./types/index.d.ts"

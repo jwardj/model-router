@@ -1,5 +1,34 @@
 import { expect, test } from 'claude-code/testing'
-import { CACHE_TTL_MS, keepWarm, routeByRules, typedText } from './route'
+import { CACHE_TTL_MS, COMPACT_ABOVE_TOKENS, inherited, keepWarm, lastSeen, routeByRules, shouldCompact, typedText } from './route'
+
+test('a follow-up stops inheriting Fable once the cache has lapsed', () => {
+  const now = 10 * CACHE_TTL_MS
+  const warm = { fable: { tokens: 200_000, at: now - 60_000 } }
+  const cold = { fable: { tokens: 200_000, at: now - CACHE_TTL_MS - 1 } }
+  expect(inherited('fable', warm, now)).toBe('fable')
+  expect(inherited('fable', cold, now)).toBe('opus')
+  expect(inherited('opus', cold, now)).toBe('opus')
+  expect(inherited('sonnet', cold, now)).toBe('sonnet')
+  // Nothing recorded means nothing known to have lapsed.
+  expect(inherited('fable', {}, now)).toBe('fable')
+  expect(routeByRules('continue', inherited('fable', cold, now))?.tier).toBe('opus')
+  expect(routeByRules('continue', inherited('fable', warm, now))?.tier).toBe('fable')
+  // Asking by name still gets Fable after a break.
+  expect(routeByRules('use fable to continue', inherited('fable', cold, now))?.tier).toBe('fable')
+})
+
+test('a big chat is compacted only when the session model is the one answering next', () => {
+  const big = { opus: { tokens: COMPACT_ABOVE_TOKENS + 50_000, at: 5 } }
+  expect(shouldCompact(big, 'claude-opus-5-5', 'opus')).toBe(true)
+  // The summary would re-read the whole chat at full price on a model with no cache of it.
+  expect(shouldCompact(big, 'claude-fable-5-2', 'opus')).toBe(false)
+  expect(shouldCompact({ opus: { tokens: COMPACT_ABOVE_TOKENS - 1, at: 5 } }, 'claude-opus-5-5', 'opus')).toBe(false)
+  expect(shouldCompact({}, 'claude-opus-5-5', 'opus')).toBe(false)
+  // The chat's size is what its most recent reader saw, so a chat already compacted is small again.
+  const after = { ...big, sonnet: { tokens: 20_000, at: 9 } }
+  expect(lastSeen(after)?.tier).toBe('sonnet')
+  expect(shouldCompact(after, 'claude-sonnet-5-5', 'sonnet')).toBe(false)
+})
 
 test('a cheaper pick does not throw away a warm cache on a big chat', () => {
   const now = 10 * CACHE_TTL_MS
@@ -63,6 +92,27 @@ test('chore words in a long question do not make it a chore', () => {
   const q = 'for the model router does it know when i say something like continue that it shouldnt use sonnet ' +
     'for that entire task, ok and will it switch once it realizes or does it only go off the length of the prompt'
   expect(routeByRules(q)?.tier).not.toBe('sonnet')
+})
+
+test('misses found by the 2026-11-16 benchmark', () => {
+  // Fable by name, phrased other ways; the story is still not the model.
+  expect(routeByRules('have Fable do this')?.tier).toBe('fable')
+  expect(routeByRules('ask fable to review my essay')?.tier).toBe('fable')
+  expect(routeByRules('can fable handle this one? make my worksheet')?.tier).toBe('fable')
+  expect(routeByRules('i want fable for this one')?.tier).toBe('fable')
+  expect(routeByRules('the tortoise and the hare is my favorite fable, thanks')?.tier).toBe('sonnet')
+  expect(routeByRules('i want fable ideas for my english class')?.tier).not.toBe('fable')
+  // Adding a part of an app is coding; being reminded how something works is explaining.
+  expect(routeByRules('add a dark mode to the dashboard')?.tier).toBe('opus')
+  expect(routeByRules('add office hours to my calendar thursday 2pm')?.tier).toBe('sonnet')
+  expect(routeByRules('remind me how convolution works')?.tier).toBe('opus')
+  expect(routeByRules("remind me what's due friday")?.tier).toBe('sonnet')
+  // Ticking something off is a chore even with a course code in it.
+  expect(routeByRules('mark the ECE306 quiz as done')?.tier).toBe('sonnet')
+  // An acknowledgement that keeps going continues the task; one on its own is a chore.
+  expect(routeByRules('thanks, now do the same for chapter 8', 'opus')?.tier).toBe('opus')
+  expect(routeByRules('ok now make it handle negative numbers too', 'opus')?.tier).toBe('opus')
+  expect(routeByRules('ok cool', 'opus')?.tier).toBe('sonnet')
 })
 
 test("the app's own reminder blocks are not routed on", () => {
