@@ -25,6 +25,49 @@ export function keepWarm(chosen: Tier, seen: Seen, now: number): Tier {
   return reread < SMALL_REREAD_TOKENS ? chosen : cur[0]
 }
 
+// A chat this big carries its whole history on every request, so a new task in it is the moment to compact:
+// right after the new task's first reply, the earliest the engine allows. Infinity turns that off.
+export const COMPACT_ABOVE_TOKENS = 150_000
+
+/** The model that read this chat last, how much of it and when; undefined in a new chat. */
+export function lastSeen(seen: Seen): { tier: Tier; tokens: number; at: number } | undefined {
+  return (Object.entries(seen) as [Tier, { tokens: number; at: number }][])
+    .map(([tier, s]) => ({ tier, ...s }))
+    .sort((a, b) => b.at - a.at)[0]
+}
+
+/**
+ * What a follow-up inherits: the last pick, except Fable once the cache has lapsed. A cold chat is re-read at
+ * full price whichever model answers, and Opus does that for half of what Fable does. Fable by name still works.
+ */
+export function inherited(prev: Tier | undefined, seen: Seen, now: number): Tier | undefined {
+  const last = lastSeen(seen)
+  return prev === 'fable' && last && now - last.at >= CACHE_TTL_MS ? 'opus' : prev
+}
+
+/**
+ * Whether to compact before a new task. The engine compacts on the session's own model (the one selected in the
+ * app), not the routed one (measured 2026-11-16), so this only pays when that is the model answering next: either
+ * its cache is the warm one, or the re-read is one it was about to pay for anyway. On any other model the summary
+ * re-reads the whole chat at full price, which costs more than the compaction saves.
+ */
+export function shouldCompact(seen: Seen, sessionModel: string, next: Tier): boolean {
+  return (lastSeen(seen)?.tokens ?? 0) >= COMPACT_ABOVE_TOKENS && sessionModel.toLowerCase().includes(next)
+}
+
+/** What the summary is told when a new task has just had its first reply in a big chat. */
+export const compactInstructions = (task: string) =>
+  `The latest request started a new task, unrelated to the chat before it: "${task}". Keep the work on that request ` +
+  'in full detail. Summarize everything before it briefly: what was done, the files involved and their paths, and ' +
+  'anything left unfinished.'
+
+export const NEW_TASK_LABELS = ['same work', 'new task'] as const
+/** Asks whether `now` starts something unrelated to `before`, the request before it in the chat. */
+export const newTaskPrompt = (before: string, now: string) =>
+  'Two requests a student made in one chat with an AI assistant, in order. Does the second continue the same work ' +
+  '(a correction, a next step, a question about it) or start a new, unrelated task?\n\n' +
+  `First request:\n${before.slice(0, 1000)}\n\nSecond request:\n${now.slice(0, 2000)}`
+
 // Asking for Fable by name wins over everything ("use fable", "have fable do this", "fable: ...", "with claude fable").
 // The model is a bare "fable" right after a verb; the story has an article ("a fable", "my favorite fable"),
 // so "write a fable for English" is still writing. "want/need fable" only counts before to/for/on.
